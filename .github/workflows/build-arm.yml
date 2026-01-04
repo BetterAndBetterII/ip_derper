@@ -1,0 +1,67 @@
+name: Build ARM Docker Image
+
+on:
+  workflow_dispatch:
+    inputs:
+      push_image:
+        description: 'Push image to registry'
+        required: false
+        default: 'true'
+        type: boolean
+
+jobs:
+  build-arm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Prepare
+        run: |
+          echo "REPO_LC=${GITHUB_REPOSITORY,,}" >> ${GITHUB_ENV}
+
+      - name: Modify tailscale source
+        run: |
+          cd tailscale
+          sed -i '/hi.ServerName != m.hostname/,+2d' cmd/derper/cert.go
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to ghcr.io
+        if: ${{ github.event.inputs.push_image == 'true' }}
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push ARM64 Docker image
+        uses: docker/build-push-action@v6
+        with:
+          file: 'Dockerfile'
+          platforms: linux/arm64
+          context: ./
+          push: ${{ github.event.inputs.push_image == 'true' }}
+          tags: |
+            ghcr.io/${{ env.REPO_LC }}:arm64
+            ghcr.io/${{ env.REPO_LC }}:latest-arm64
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push ARMv7 Docker image
+        uses: docker/build-push-action@v6
+        with:
+          file: 'Dockerfile'
+          platforms: linux/arm/v7
+          context: ./
+          push: ${{ github.event.inputs.push_image == 'true' }}
+          tags: |
+            ghcr.io/${{ env.REPO_LC }}:armv7
+            ghcr.io/${{ env.REPO_LC }}:latest-armv7
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
